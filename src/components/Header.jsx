@@ -5,6 +5,7 @@ export default function Header() {
 
   return (
     <header
+      className="app-header no-print"
       style={{
         position: 'sticky',
         top: 0,

@@ -23,10 +23,10 @@ function Label({ product }) {
 
   return (
     <div className="card label-print" style={{ textAlign: 'center' }}>
-      <canvas ref={canvasRef} />
-      <div style={{ fontWeight: 700, marginTop: 6 }}>{product.name}</div>
-      <div className="muted">{product.id} · {currency.format(product.price)}</div>
-      <button className="btn-secondary" style={{ marginTop: 10 }} onClick={download}>
+      <canvas ref={canvasRef} className="label-qr" />
+      <div className="label-name" style={{ fontWeight: 700, marginTop: 6 }}>{product.name}</div>
+      <div className="label-meta muted">{product.id} · {currency.format(product.price)}</div>
+      <button className="btn-secondary no-print" style={{ marginTop: 10 }} onClick={download}>
         Descargar PNG
       </button>
     </div>
@@ -122,9 +122,26 @@ export default function GenerateQR() {
 
       <style>{`
         @media print {
+          @page { margin: 10mm; }
+          body { background: #fff !important; }
           .bottom-nav, .offline-banner, form, h1, p.muted, .no-print { display: none !important; }
-          #labels-sheet { grid-template-columns: repeat(3, 1fr) !important; }
-          .label-print { break-inside: avoid; box-shadow: none !important; border: 1px solid #ccc; }
+          .page { max-width: none !important; padding: 0 !important; }
+
+          #labels-sheet {
+            display: grid !important;
+            grid-template-columns: repeat(4, 1fr) !important;
+            gap: 6mm !important;
+          }
+          .label-print {
+            box-shadow: none !important;
+            border: 1px solid #999 !important;
+            border-radius: 4px !important;
+            padding: 6px !important;
+            break-inside: avoid;
+          }
+          .label-qr { width: 70px !important; height: 70px !important; }
+          .label-name { font-size: 10px !important; margin-top: 3px !important; line-height: 1.2; }
+          .label-meta { font-size: 8px !important; }
         }
       `}</style>
     </div>
