@@ -220,7 +220,8 @@ export default function Monographs() {
       resetForm()
     } catch (err) {
       console.error(err)
-      setMessage('Error al guardar. Verifica tu conexión e inténtalo de nuevo.')
+      const msg = err?.message || String(err)
+      setMessage(`Error: ${msg}`)
     } finally {
       setUploading(false)
       setUploadProgress(0)
