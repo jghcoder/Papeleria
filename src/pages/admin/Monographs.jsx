@@ -1,4 +1,4 @@
-import { useMemo, useState, useRef } from 'react'
+import { useMemo, useState, useRef, useEffect } from 'react'
 import { doc, setDoc, deleteDoc } from 'firebase/firestore'
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'
 import { db, storage } from '../../firebase'
@@ -47,6 +47,30 @@ export default function Monographs() {
   const [photoFile, setPhotoFile] = useState(null)
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef(null)
+  const videoRef = useRef(null)
+  const canvasRef = useRef(null)
+  const [showCamera, setShowCamera] = useState(false)
+  const [stream, setStream] = useState(null)
+
+  useEffect(() => {
+    if (showCamera && videoRef.current) {
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+        .then((s) => {
+          setStream(s)
+          videoRef.current.srcObject = s
+        })
+        .catch(() => {
+          setMessage('No se pudo acceder a la cámara. Usa "Subir archivo".')
+          setShowCamera(false)
+        })
+    } else if (stream) {
+      stream.getTracks().forEach((t) => t.stop())
+      setStream(null)
+    }
+    return () => {
+      if (stream) stream.getTracks().forEach((t) => t.stop())
+    }
+  }, [showCamera])
 
   function startEdit(monograph) {
     setEditingId(monograph.id)
@@ -58,6 +82,7 @@ export default function Monographs() {
       photoURL: monograph.photoURL || ''
     })
     setPhotoFile(null)
+    setShowCamera(false)
     setTab('alta')
   }
 
@@ -65,6 +90,7 @@ export default function Monographs() {
     setEditingId(null)
     setForm(empty)
     setPhotoFile(null)
+    setShowCamera(false)
     setMessage('')
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
@@ -81,8 +107,26 @@ export default function Monographs() {
         return
       }
       setPhotoFile(file)
+      setShowCamera(false)
       setMessage('')
     }
+  }
+
+  function capturePhoto() {
+    if (!videoRef.current || !canvasRef.current) return
+    const video = videoRef.current
+    const canvas = canvasRef.current
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    canvas.getContext('2d').drawImage(video, 0, 0)
+    canvas.toBlob((blob) => {
+      if (blob) {
+        const file = new File([blob], `camera-${Date.now()}.jpg`, { type: 'image/jpeg' })
+        setPhotoFile(file)
+        setShowCamera(false)
+        setMessage('')
+      }
+    }, 'image/jpeg', 0.8)
   }
 
   async function uploadPhoto(file, code) {
@@ -250,15 +294,36 @@ export default function Monographs() {
             {locations.map((l) => <option key={l} value={l} />)}
           </datalist>
 
-          <label htmlFor="photo">Foto (opcional, máx. 5 MB)</label>
-          <input
-            id="photo"
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            onChange={handlePhotoChange}
-            disabled={uploading}
-          />
+          <label>Foto (opcional, máx. 5 MB)</label>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+            <button type="button" className={showCamera ? 'btn-primary' : 'btn-secondary'} onClick={() => setShowCamera(true)} style={{ flex: 1 }}>
+              📷 Cámara
+            </button>
+            <button type="button" className={!showCamera && !photoFile ? 'btn-primary' : 'btn-secondary'} onClick={() => fileInputRef.current?.click()} style={{ flex: 1 }} disabled={showCamera}>
+              📁 Subir archivo
+            </button>
+          </div>
+          {showCamera && (
+            <div style={{ position: 'relative', maxWidth: '100%', marginBottom: 8 }}>
+              <video ref={videoRef} autoPlay playsInline style={{ width: '100%', maxHeight: 300, borderRadius: 8, background: '#000' }} />
+              <canvas ref={canvasRef} style={{ display: 'none' }} />
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <button type="button" className="btn-primary" onClick={capturePhoto} style={{ flex: 1 }}>Capturar</button>
+                <button type="button" className="btn-secondary" onClick={() => setShowCamera(false)} style={{ flex: 1 }}>Cancelar</button>
+              </div>
+            </div>
+          )}
+          {!showCamera && (
+            <input
+              id="photo"
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handlePhotoChange}
+              disabled={uploading}
+              style={{ display: 'none' }}
+            />
+          )}
           {photoFile && (
             <div style={{ marginTop: 8 }}>
               <img
@@ -266,6 +331,7 @@ export default function Monographs() {
                 alt="Vista previa"
                 style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 8 }}
               />
+              <button type="button" className="btn-secondary" onClick={() => { setPhotoFile(null); if (fileInputRef.current) fileInputRef.current.value = ''; }} style={{ marginTop: 8 }}>Quitar foto</button>
             </div>
           )}
           {form.photoURL && !photoFile && (
