@@ -46,6 +46,7 @@ export default function Monographs() {
   const [categoryFilter, setCategoryFilter] = useState('')
   const [photoFile, setPhotoFile] = useState(null)
   const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
   const fileInputRef = useRef(null)
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
@@ -92,24 +93,55 @@ export default function Monographs() {
     setPhotoFile(null)
     setShowCamera(false)
     setMessage('')
+    setUploadProgress(0)
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
-  function handlePhotoChange(e) {
+  async function handlePhotoChange(e) {
     const file = e.target.files[0]
     if (file) {
       if (!file.type.startsWith('image/')) {
         setMessage('El archivo debe ser una imagen.')
         return
       }
-      if (file.size > 5 * 1024 * 1024) {
-        setMessage('La imagen no debe superar 5 MB.')
+      if (file.size > 10 * 1024 * 1024) {
+        setMessage('La imagen no debe superar 10 MB (se comprimirá automáticamente).')
         return
       }
-      setPhotoFile(file)
+      setMessage('Comprimiendo imagen...')
+      const compressed = await compressImage(file)
+      setPhotoFile(compressed)
       setShowCamera(false)
       setMessage('')
     }
+  }
+
+  function compressImage(file, maxDimension = 1200, quality = 0.7) {
+    return new Promise((resolve) => {
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        let { width, height } = img
+        if (width > height) {
+          if (width > maxDimension) {
+            height = (height * maxDimension) / width
+            width = maxDimension
+          }
+        } else {
+          if (height > maxDimension) {
+            width = (width * maxDimension) / height
+            height = maxDimension
+          }
+        }
+        canvas.width = width
+        canvas.height = height
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height)
+        canvas.toBlob((blob) => {
+          resolve(new File([blob], file.name, { type: 'image/jpeg' }))
+        }, 'image/jpeg', quality)
+      }
+      img.src = URL.createObjectURL(file)
+    })
   }
 
   function capturePhoto() {
@@ -119,10 +151,11 @@ export default function Monographs() {
     canvas.width = video.videoWidth
     canvas.height = video.videoHeight
     canvas.getContext('2d').drawImage(video, 0, 0)
-    canvas.toBlob((blob) => {
+    canvas.toBlob(async (blob) => {
       if (blob) {
         const file = new File([blob], `camera-${Date.now()}.jpg`, { type: 'image/jpeg' })
-        setPhotoFile(file)
+        const compressed = await compressImage(file)
+        setPhotoFile(compressed)
         setShowCamera(false)
         setMessage('')
       }
@@ -130,8 +163,14 @@ export default function Monographs() {
   }
 
   async function uploadPhoto(file, code) {
-    const storageRef = ref(storage, `monographs/${code}/${file.name}`)
-    await uploadBytes(storageRef, file)
+    const compressed = await compressImage(file)
+    const storageRef = ref(storage, `monographs/${code}/${compressed.name}`)
+    const uploadTask = uploadBytes(storageRef, compressed)
+    uploadTask.on('state_changed', (snapshot) => {
+      const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100
+      setUploadProgress(Math.round(progress))
+    })
+    await uploadTask
     return await getDownloadURL(storageRef)
   }
 
@@ -153,18 +192,21 @@ export default function Monographs() {
     }
 
     setUploading(true)
+    setUploadProgress(0)
     setMessage('')
 
     try {
       let photoURL = form.photoURL
 
       if (photoFile) {
+        setMessage('Subiendo foto...')
         if (form.photoURL && editingId) {
           await deletePhoto(form.photoURL)
         }
         photoURL = await uploadPhoto(photoFile, idNumber)
       }
 
+      setMessage('Guardando...')
       const data = {
         idNumber,
         name: form.name.trim(),
@@ -177,9 +219,11 @@ export default function Monographs() {
       setMessage(editingId ? 'Monografía actualizada.' : 'Monografía agregada.')
       resetForm()
     } catch (err) {
-      setMessage('No se pudo guardar. Si estás sin internet, se guardará al reconectar.')
+      console.error(err)
+      setMessage('Error al guardar. Verifica tu conexión e inténtalo de nuevo.')
     } finally {
       setUploading(false)
+      setUploadProgress(0)
     }
   }
 
@@ -346,10 +390,27 @@ export default function Monographs() {
           )}
 
           {message && <p style={{ fontWeight: 700, color: 'var(--ledger)' }}>{message}</p>}
+          {uploading && uploadProgress > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ height: 6, background: 'var(--line)', borderRadius: 3, overflow: 'hidden' }}>
+                <div
+                  style={{
+                    height: '100%',
+                    width: `${uploadProgress}%`,
+                    background: 'var(--ledger)',
+                    transition: 'width 0.2s'
+                  }}
+                />
+              </div>
+              <p className="muted" style={{ marginTop: 4, fontSize: 0.85, textAlign: 'right' }}>
+                {uploadProgress}% - {photoFile ? 'Subiendo foto...' : 'Guardando...'}
+              </p>
+            </div>
+          )}
 
           <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
             <button type="submit" className="btn-primary" style={{ flex: 1 }} disabled={uploading}>
-              {uploading ? 'Subiendo…' : editingId ? 'Guardar cambios' : 'Agregar monografía'}
+              {uploading ? (photoFile ? `Subiendo ${uploadProgress}%...` : 'Guardando...') : editingId ? 'Guardar cambios' : 'Agregar monografía'}
             </button>
             {editingId && (
               <button type="button" className="btn-secondary" onClick={resetForm} disabled={uploading}>
