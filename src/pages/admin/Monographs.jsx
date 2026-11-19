@@ -1,6 +1,6 @@
 import { useMemo, useState, useRef, useEffect } from 'react'
 import { doc, setDoc, deleteDoc } from 'firebase/firestore'
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'
+import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage'
 import { db, storage } from '../../firebase'
 import { useMonographs } from '../../utils/useMonographs.js'
 
@@ -165,13 +165,20 @@ export default function Monographs() {
   async function uploadPhoto(file, code) {
     const compressed = await compressImage(file)
     const storageRef = ref(storage, `monographs/${code}/${compressed.name}`)
-    const uploadTask = uploadBytes(storageRef, compressed)
-    uploadTask.on('state_changed', (snapshot) => {
-      const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100
-      setUploadProgress(Math.round(progress))
+    const uploadTask = uploadBytesResumable(storageRef, compressed)
+    return new Promise((resolve, reject) => {
+      uploadTask.on('state_changed',
+        (snapshot) => {
+          const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100
+          setUploadProgress(Math.round(progress))
+        },
+        (err) => reject(err),
+        async () => {
+          const url = await getDownloadURL(uploadTask.snapshot.ref)
+          resolve(url)
+        }
+      )
     })
-    await uploadTask
-    return await getDownloadURL(storageRef)
   }
 
   async function deletePhoto(photoURL) {
